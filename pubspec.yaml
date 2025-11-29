@@ -15,6 +15,7 @@ dependencies:
   tflite_flutter: any
   image: any
   shared_preferences: ^2.3.2
+  flutter_tts: ^3.8.3
   
   cupertino_icons: ^1.0.8
 

@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
-import 'hairstyles_screen.dart'; 
+import 'package:flutter_tts/flutter_tts.dart'; // IMPORT TTS
+import 'hairstyles_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,7 +35,6 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    // Wait 3 seconds, then navigate to the main screen
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) {
         Navigator.of(context).pushReplacement(
@@ -52,13 +52,11 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Displays your app logo (ensure assets/icon/app_icon.png exists)
             Image.asset(
               'assets/icon/app_icon.png',
               width: 150,
               height: 150,
               errorBuilder: (context, error, stackTrace) {
-                // Fallback if image is missing, just to prevent crash
                 return const Icon(Icons.camera_alt, size: 100, color: Colors.orange);
               },
             ),
@@ -78,7 +76,6 @@ class _SplashScreenState extends State<SplashScreen> {
 
 // --- MAIN APP SCREEN ---
 
-// Helper: Resize image BEFORE processing to prevent lag
 img.Image convertCameraImage(CameraImage cameraImage) {
   final int width = cameraImage.width;
   final int height = cameraImage.height;
@@ -120,25 +117,47 @@ class _CutCamScreenState extends State<CutCamScreen> {
   Interpreter? _interpreter;
   List<Rect> _detectionBoxes = [];
   late int _inputSize;
+  
+  // --- TTS SETUP ---
+  final FlutterTts flutterTts = FlutterTts();
+  
   int _currentStepIndex = 0;
   
   final List<String> haircutSteps = const [
-    'Step 1: #2 Guard - Cut the sides and back',
-    'Step 2: #4 Guard - Cut the top',
-    'Step 3: #3 Guard - Blend the top and sides',
-    'Step 4: Clean up the back of the neck',
-    'Step 5: Create a sharp line at the front',
+    'Step 1: Use Number 2 Guard. Cut the sides and back.',
+    'Step 2: Switch to Number 4 Guard. Cut the top section.',
+    'Step 3: Use Number 3 Guard to blend the top and sides.',
+    'Step 4: Remove guard. Clean up the back of the neck.',
+    'Step 5: Create a sharp line at the front.',
   ];
 
   @override
   void initState() {
     super.initState();
-    // Using LOW resolution to ensure the camera does not lag
+    _initTts(); // Initialize voice
+    
     _controller = CameraController(widget.camera, ResolutionPreset.low, enableAudio: false);
     _controller.initialize().then((_) {
       if (!mounted) return;
       _loadModel(); 
     });
+  }
+
+  // Configure the Voice
+  Future<void> _initTts() async {
+    await flutterTts.setLanguage("en-US");
+    await flutterTts.setSpeechRate(0.5); // Normal speed
+    await flutterTts.setVolume(1.0);
+    // Speak the first step automatically when app starts
+    _speak(haircutSteps[0]); 
+  }
+
+  // Function to make the phone speak
+  Future<void> _speak(String text) async {
+    await flutterTts.stop(); // Stop any previous speech
+    if (text.isNotEmpty) {
+      await flutterTts.speak(text);
+    }
   }
 
   Future<void> _loadModel() async {
@@ -160,7 +179,6 @@ class _CutCamScreenState extends State<CutCamScreen> {
   }
   
   Uint8List imageToByteBuffer(img.Image image, int inputSize) {
-    // Resize image to what the AI expects
     var resizedImage = img.copyResize(image, width: inputSize, height: inputSize);
     var buffer = Uint8List(1 * inputSize * inputSize * 3);
     var bufferIndex = 0;
@@ -193,39 +211,17 @@ class _CutCamScreenState extends State<CutCamScreen> {
         0: outputLocations, 1: outputClasses, 2: outputScores, 3: numDetections,
       });
 
-      // --- SCALING LOGIC STARTS HERE ---
-      // 1. Calculate how much we shrank the image
-      // The AI sees a square (_inputSize x _inputSize), e.g., 300x300
-      // The Camera image is rectangle (width x height)
-      
-      // Since we resized the camera image directly to inputSize x inputSize, 
-      // the coordinates are relative to that square.
-      // The SSD MobileNet model returns coordinates as [ymin, xmin, ymax, xmax] 
-      // normalized between 0.0 and 1.0. This is the key! 
-      // If they are normalized (0-1), we just multiply by the screen size in the Painter.
-      
       final List<Rect> boxes = [];
       for (int i = 0; i < 10; i++) {
         if (outputScores[0][i] > 0.5) {
-          // SSD MobileNet output is [ymin, xmin, ymax, xmax] 
-          // AND it is normalized (0.0 to 1.0), so we don't need complex math here.
-          // We just pass these 0.0-1.0 values to the painter, 
-          // and the painter multiplies them by the actual canvas size.
-          
-          final rect = Rect.fromLTRB(
-            outputLocations[0][i][1], // xmin
-            outputLocations[0][i][0], // ymin
-            outputLocations[0][i][3], // xmax
-            outputLocations[0][i][2]  // ymax
+          final box = Rect.fromLTRB(
+            outputLocations[0][i][1], 
+            outputLocations[0][i][0], 
+            outputLocations[0][i][3], 
+            outputLocations[0][i][2]
           );
-          
-          boxes.add(rect);
+          boxes.add(box);
         }
-      }
-      // --- SCALING LOGIC ENDS ---
-
-      if (boxes.isNotEmpty) {
-        print("AI: Found ${boxes.length} objects!"); 
       }
 
       if(mounted) {
@@ -242,6 +238,7 @@ class _CutCamScreenState extends State<CutCamScreen> {
   void dispose() {
     _controller.dispose();
     _interpreter?.close();
+    flutterTts.stop(); // Stop speaking when app closes
     super.dispose();
   }
 
@@ -268,13 +265,11 @@ class _CutCamScreenState extends State<CutCamScreen> {
       ),
       body: Column(
         children: [
-          // 1. Camera Preview Area
           Expanded(
             flex: 3, 
             child: Stack(
               fit: StackFit.expand,
               children: [
-                // AspectRatio ensures no stretching
                 AspectRatio(
                   aspectRatio: _controller.value.aspectRatio,
                   child: CameraPreview(_controller),
@@ -284,7 +279,6 @@ class _CutCamScreenState extends State<CutCamScreen> {
             ),
           ),
           
-          // 2. Instructions Area
           Expanded(
             flex: 2, 
             child: Column(
@@ -311,7 +305,11 @@ class _CutCamScreenState extends State<CutCamScreen> {
                           child: Text('${index + 1}', style: const TextStyle(color: Colors.white)),
                         ),
                         title: Text(haircutSteps[index]),
-                        onTap: () => setState(() => _currentStepIndex = index),
+                        onTap: () {
+                          // Change the state AND Speak
+                          setState(() => _currentStepIndex = index);
+                          _speak(haircutSteps[index]);
+                        },
                       );
                     },
                   ),
@@ -331,18 +329,13 @@ class BoxPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.orange
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0;
-
+    final paint = Paint()..color = Colors.orange..style = PaintingStyle.stroke..strokeWidth = 3.0;
     for (var box in boxes) {
-      // Scale the 0.0-1.0 coordinates to the actual screen size
       final scaledRect = Rect.fromLTRB(
-        box.left * size.width,   // xmin * screen_width
-        box.top * size.height,   // ymin * screen_height
-        box.right * size.width,  // xmax * screen_width
-        box.bottom * size.height // ymax * screen_height
+        box.left * size.width, 
+        box.top * size.height, 
+        box.right * size.width, 
+        box.bottom * size.height
       );
       canvas.drawRect(scaledRect, paint);
     }
