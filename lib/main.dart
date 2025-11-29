@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
-import 'package:flutter_tts/flutter_tts.dart'; // IMPORT TTS
+import 'package:flutter_tts/flutter_tts.dart';
 import 'hairstyles_screen.dart';
 
 Future<void> main() async {
@@ -122,6 +122,7 @@ class _CutCamScreenState extends State<CutCamScreen> {
   final FlutterTts flutterTts = FlutterTts();
   
   int _currentStepIndex = 0;
+  bool _isHeadInFrame = false; // NEW: Tracks if we can see the user
   
   final List<String> haircutSteps = const [
     'Step 1: Use Number 2 Guard. Cut the sides and back.',
@@ -134,7 +135,7 @@ class _CutCamScreenState extends State<CutCamScreen> {
   @override
   void initState() {
     super.initState();
-    _initTts(); // Initialize voice
+    _initTts();
     
     _controller = CameraController(widget.camera, ResolutionPreset.low, enableAudio: false);
     _controller.initialize().then((_) {
@@ -143,18 +144,15 @@ class _CutCamScreenState extends State<CutCamScreen> {
     });
   }
 
-  // Configure the Voice
   Future<void> _initTts() async {
     await flutterTts.setLanguage("en-US");
-    await flutterTts.setSpeechRate(0.5); // Normal speed
+    await flutterTts.setSpeechRate(0.5);
     await flutterTts.setVolume(1.0);
-    // Speak the first step automatically when app starts
     _speak(haircutSteps[0]); 
   }
 
-  // Function to make the phone speak
   Future<void> _speak(String text) async {
-    await flutterTts.stop(); // Stop any previous speech
+    await flutterTts.stop();
     if (text.isNotEmpty) {
       await flutterTts.speak(text);
     }
@@ -225,7 +223,10 @@ class _CutCamScreenState extends State<CutCamScreen> {
       }
 
       if(mounted) {
-        setState(() => _detectionBoxes = boxes);
+        setState(() {
+          _detectionBoxes = boxes;
+          _isHeadInFrame = boxes.isNotEmpty; // Check if we see a head
+        });
       }
     } catch (e) {
       print("Detection Error: $e");
@@ -238,7 +239,7 @@ class _CutCamScreenState extends State<CutCamScreen> {
   void dispose() {
     _controller.dispose();
     _interpreter?.close();
-    flutterTts.stop(); // Stop speaking when app closes
+    flutterTts.stop();
     super.dispose();
   }
 
@@ -283,13 +284,20 @@ class _CutCamScreenState extends State<CutCamScreen> {
             flex: 2, 
             child: Column(
               children: [
+                // STATUS BAR
                 Container(
                   width: double.infinity,
-                  color: Colors.black, 
+                  color: _isHeadInFrame ? Colors.black : Colors.redAccent, // Red if no head detected
                   padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                   child: Text(
-                    haircutSteps[_currentStepIndex],
-                    style: const TextStyle(color: Colors.orange, fontSize: 18, fontWeight: FontWeight.bold),
+                    _isHeadInFrame 
+                      ? haircutSteps[_currentStepIndex]
+                      : "⚠ Position head in frame", // Warning message
+                    style: TextStyle(
+                      color: _isHeadInFrame ? Colors.orange : Colors.white,
+                      fontSize: 18, 
+                      fontWeight: FontWeight.bold
+                    ),
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -306,7 +314,6 @@ class _CutCamScreenState extends State<CutCamScreen> {
                         ),
                         title: Text(haircutSteps[index]),
                         onTap: () {
-                          // Change the state AND Speak
                           setState(() => _currentStepIndex = index);
                           _speak(haircutSteps[index]);
                         },
@@ -323,13 +330,23 @@ class _CutCamScreenState extends State<CutCamScreen> {
   }
 }
 
+// --- UPDATED PAINTER FOR AR LINES ---
 class BoxPainter extends CustomPainter {
   final List<Rect> boxes;
   BoxPainter(this.boxes);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.orange..style = PaintingStyle.stroke..strokeWidth = 3.0;
+    final boxPaint = Paint()
+      ..color = Colors.orange
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0;
+
+    final guideLinePaint = Paint()
+      ..color = Colors.greenAccent.withOpacity(0.8)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+
     for (var box in boxes) {
       final scaledRect = Rect.fromLTRB(
         box.left * size.width, 
@@ -337,7 +354,18 @@ class BoxPainter extends CustomPainter {
         box.right * size.width, 
         box.bottom * size.height
       );
-      canvas.drawRect(scaledRect, paint);
+      
+      // Draw the Bounding Box
+      canvas.drawRect(scaledRect, boxPaint);
+
+      // Draw the AR Guide Line (Horizontal line through the center)
+      final centerY = scaledRect.center.dy;
+      // Draw line from left edge of screen to right edge, passing through head center
+      canvas.drawLine(
+        Offset(0, centerY), 
+        Offset(size.width, centerY), 
+        guideLinePaint
+      );
     }
   }
 
