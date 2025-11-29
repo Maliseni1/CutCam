@@ -1,5 +1,5 @@
 import 'package:camera/camera.dart';
-import 'package:cutcam/main.dart';
+import 'package:cutcam/camera_screen.dart'; // <--- NEW IMPORT
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -13,6 +13,7 @@ void main() {
     );
 
     // 2. Build the screen wrapped in a MaterialApp
+    // We use CutCamScreen directly, which is now found in camera_screen.dart
     await tester.pumpWidget(MaterialApp(
       home: CutCamScreen(camera: fakeCamera),
     ));
