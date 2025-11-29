@@ -18,24 +18,17 @@ class CutCamScreenWrapper extends StatelessWidget {
         if (snapshot.hasData && snapshot.data!.isNotEmpty) {
           return CutCamScreen(camera: snapshot.data!.first);
         }
-        return const Scaffold(
-          backgroundColor: Colors.black,
-          body: Center(child: CircularProgressIndicator(color: Colors.orange)),
-        );
+        return const Scaffold(body: Center(child: CircularProgressIndicator()));
       },
     );
   }
 }
 
 // --- MAIN CAMERA SCREEN ---
-// --- ROTATION-AWARE IMAGE CONVERSION ---
+
 img.Image convertCameraImage(CameraImage cameraImage) {
   final int width = cameraImage.width;
   final int height = cameraImage.height;
-  
-  // 1. Create the image buffer
-  // Note: We create it with swapped width/height because we are going to rotate it
-  // But for the initial byte copy, we use the original dimensions
   final img.Image image = img.Image(width: width, height: height);
   
   final int uvRowStride = cameraImage.planes[1].bytesPerRow;
@@ -57,10 +50,7 @@ img.Image convertCameraImage(CameraImage cameraImage) {
       image.setPixelRgba(x, y, r, g, b, 255);
     }
   }
-  
-  // 2. ROTATE THE IMAGE 90 DEGREES
-  // Most portrait apps need a 90 degree rotation to be upright for the AI
-  return img.copyRotate(image, angle: 90); 
+  return image;
 }
 
 class CutCamScreen extends StatefulWidget {
@@ -82,18 +72,17 @@ class _CutCamScreenState extends State<CutCamScreen> {
   bool _isHeadInFrame = false;
   
   final List<String> haircutSteps = const [
-    'Step 1: #2 Guard - Sides & Back',
-    'Step 2: #4 Guard - Top Section',
-    'Step 3: #3 Guard - Blend Sides',
-    'Step 4: Clean Neckline',
-    'Step 5: Sharp Front Line',
+    'Step 1: Use #2 Clip - Cut Sides & Back',
+    'Step 2: Use #4 Clip - Cut the Top',
+    'Step 3: Use #3 Clip - Blend the Sides',
+    'Step 4: Remove Clip - Clean the Neck',
+    'Step 5: Make a Sharp Front Line',
   ];
 
   @override
   void initState() {
     super.initState();
     _initTts();
-    // Use medium resolution for good balance of speed and clarity
     _controller = CameraController(widget.camera, ResolutionPreset.medium, enableAudio: false);
     _controller.initialize().then((_) {
       if (!mounted) return;
@@ -203,24 +192,27 @@ class _CutCamScreenState extends State<CutCamScreen> {
   @override
   Widget build(BuildContext context) {
     if (!_controller.value.isInitialized) {
-      return const Scaffold(backgroundColor: Colors.black, body: Center(child: CircularProgressIndicator(color: Colors.orange)));
+      return const Scaffold(body: Center(child: CircularProgressIndicator(color: Colors.orange)));
     }
 
-    // --- STANDARD CALIBRATION LOGIC ---
-    // 1. Get the aspect ratio of the camera sensor
     double aspectRatio = _controller.value.aspectRatio;
-    
-    // 2. If the phone is in portrait mode, we MUST flip the ratio
-    //    (Because camera sensors are landscape by default)
     if (MediaQuery.of(context).orientation == Orientation.portrait) {
       aspectRatio = 1 / aspectRatio;
     }
 
+    // --- DYNAMIC THEME COLORS ---
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final backgroundColor = isDark ? Colors.black : Colors.white;
+    final panelColor = isDark ? Colors.black.withOpacity(0.85) : Colors.white.withOpacity(0.9);
+    final textColor = isDark ? Colors.white : Colors.black87;
+    final unselectedStepColor = isDark ? Colors.grey[800] : Colors.grey[300];
+    final handleColor = isDark ? Colors.grey : Colors.grey[400];
+
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: backgroundColor, 
       body: Stack(
         children: [
-          // 1. Calibrated Camera Viewfinder
+          // 1. Camera Viewfinder
           Center(
             child: AspectRatio(
               aspectRatio: aspectRatio,
@@ -256,7 +248,7 @@ class _CutCamScreenState extends State<CutCamScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                 decoration: BoxDecoration(
-                  color: _isHeadInFrame ? Colors.green.withOpacity(0.8) : Colors.red.withOpacity(0.8),
+                  color: _isHeadInFrame ? Colors.green.withOpacity(0.9) : Colors.red.withOpacity(0.9),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
@@ -274,11 +266,11 @@ class _CutCamScreenState extends State<CutCamScreen> {
               height: 220,
               margin: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.85),
+                color: panelColor,
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.white10),
+                border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
                 boxShadow: [
-                  BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 20, spreadRadius: 5),
+                  BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, spreadRadius: 5),
                 ],
               ),
               child: Column(
@@ -287,7 +279,7 @@ class _CutCamScreenState extends State<CutCamScreen> {
                     margin: const EdgeInsets.only(top: 12),
                     width: 40,
                     height: 4,
-                    decoration: BoxDecoration(color: Colors.grey, borderRadius: BorderRadius.circular(2)),
+                    decoration: BoxDecoration(color: handleColor, borderRadius: BorderRadius.circular(2)),
                   ),
                   
                   Padding(
@@ -295,8 +287,8 @@ class _CutCamScreenState extends State<CutCamScreen> {
                     child: Text(
                       haircutSteps[_currentStepIndex],
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white, 
+                      style: TextStyle(
+                        color: textColor,
                         fontSize: 18, 
                         fontWeight: FontWeight.bold
                       ),
@@ -319,15 +311,15 @@ class _CutCamScreenState extends State<CutCamScreen> {
                             margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
                             width: 60,
                             decoration: BoxDecoration(
-                              color: isSelected ? Colors.orange : Colors.grey[800],
+                              color: isSelected ? Colors.orange : unselectedStepColor,
                               shape: BoxShape.circle,
-                              border: isSelected ? Border.all(color: Colors.white, width: 2) : null,
+                              border: isSelected ? Border.all(color: textColor, width: 2) : null,
                             ),
                             child: Center(
                               child: Text(
                                 '${index + 1}',
                                 style: TextStyle(
-                                  color: Colors.white,
+                                  color: isSelected ? Colors.white : textColor,
                                   fontWeight: FontWeight.bold,
                                   fontSize: isSelected ? 20 : 16,
                                 ),
