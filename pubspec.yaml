@@ -16,6 +16,11 @@ dependencies:
   image: any
   shared_preferences: ^2.3.2
   flutter_tts: ^3.8.3
+
+  # NEW PACKAGES FOR UPDATES:
+  http: ^1.2.0
+  package_info_plus: ^8.0.0
+  url_launcher: ^6.2.5
   
   cupertino_icons: ^1.0.8
 
